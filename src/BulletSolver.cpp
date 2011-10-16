@@ -36,6 +36,7 @@ public:
         std::cerr << "Solveamajig ctor\n";
         setup();
     }
+
     void setup()
     {
         // Build the broadphase
@@ -58,7 +59,7 @@ public:
             new btDefaultMotionState(btTransform(btQuaternion(0,0,0,1), btVector3(0,-1,0)));
 
         btRigidBody::btRigidBodyConstructionInfo
-            groundRigidBodyCI(0,groundMotionState,groundShape,btVector3(0,0,0));
+            groundRigidBodyCI(0, groundMotionState, groundShape, btVector3(0,0,0));
         btRigidBody* groundRigidBody = new btRigidBody(groundRigidBodyCI);
 
         dynamicsWorld->addRigidBody(groundRigidBody);
@@ -173,7 +174,8 @@ public:
         std::cerr << "Testing input " << op->Class() << "\n";
         if(strcmp(op->Class(), "NullGeo") == 0)
         {
-            std::cerr << "IS null geo, accepting\n";
+            // Accept the NullGeo input, when no real node is
+            // connected, otherwise modify_geometry dies
             return true;
         }
         bool is_thing = dynamic_cast<DD::Image::SourceGeo*>(op) != 0;
@@ -219,8 +221,6 @@ public:
 
 void BulletSolver::get_geometry_hash()
 {
-    if(!input(0)) return;
-
     std::cerr << "BulletSolver::get_geometry_hash\n";
 
     // Get all hashes up-to-date
@@ -236,7 +236,12 @@ void BulletSolver::_validate(bool for_real)
 {
     std::cerr << "BulletSolver::_validate\n";
     ModifyGeo::_validate(for_real);
-    frame = outputContext().frame();
+
+    // TODO: Use this instead of the sim_frame knob. sim_frame was
+    // needed to make _validate etc be called on frame change, but
+    // there must be a better way
+
+    //frame = outputContext().frame();
 }
 
 void BulletSolver::modify_geometry(int obj, DD::Image::Scene& scene, DD::Image::GeometryList& geolist)
@@ -257,6 +262,7 @@ void BulletSolver::modify_geometry(int obj, DD::Image::Scene& scene, DD::Image::
     }
     */
 
+    std::cerr << "Stepping sim to " << frame << "\n";
     bsolve->step(frame);
     if(!bsolve->getSpherePosition(geolist[obj].matrix)){
         error("Something broke, uhoh. No idea what.");
