@@ -36,20 +36,23 @@ void Solveamajig::setup()
     dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher,broadphase,solver,collisionConfiguration);
 
     // Create test objects
-    groundShape = new btStaticPlaneShape(btVector3(0,1,0), 1);
+    groundShape = new btStaticPlaneShape(btVector3(0, 1, 0), 1);
     groundMotionState =
-        new btDefaultMotionState(btTransform(btQuaternion(0,0,0,1), btVector3(0,-1,0)));
+        new btDefaultMotionState(btTransform(btQuaternion(0, 0, 0, 1), btVector3(0, -1, 0)));
 
     btRigidBody::btRigidBodyConstructionInfo
-        groundRigidBodyCI(0, groundMotionState, groundShape, btVector3(15,0,0));
+        groundRigidBodyCI(0, groundMotionState, groundShape, btVector3(15, 0, 0));
     btRigidBody* groundRigidBody = new btRigidBody(groundRigidBodyCI);
 
     dynamicsWorld->addRigidBody(groundRigidBody);
+
+    std::cerr << "Calling setup method on each BulletRigidBody, there are " << m_objects.size() << "\n";
 
     std::vector<BulletRigidBody*>::iterator iter;
     for(iter = m_objects.begin(); iter != m_objects.end(); ++iter)
     {
         (*iter)->setup();
+        (*iter)->addToWorld(dynamicsWorld);
     }
 
     m_sim_prev_frame = 0;
@@ -59,7 +62,11 @@ void Solveamajig::addObject(BulletRigidBody* obj)
 {
     std::cerr << "Solveamajig::addObject\n";
     m_objects.push_back(obj);
-    obj->addToWorld(dynamicsWorld);
+}
+
+void Solveamajig::clearObjects()
+{
+    m_objects.clear();
 }
 
 Solveamajig::~Solveamajig()
@@ -70,6 +77,8 @@ Solveamajig::~Solveamajig()
 
 void Solveamajig::teardown()
 {
+    std::cerr << "Calling teardown method on each BulletRigidBody, there are " << m_objects.size() << "\n";
+
     std::vector<BulletRigidBody*>::iterator iter;
     for(iter = m_objects.begin(); iter != m_objects.end(); ++iter)
     {
@@ -119,15 +128,12 @@ void Solveamajig::step(int frame)
 
 void Solveamajig::resetsim()
 {
+    std::cerr << "Solveamajig::resetsim teardown\n";
     teardown();
+    std::cerr << "Solveamajig::resetsim setup\n";
     setup();
-
-    std::vector<BulletRigidBody*>::iterator iter;
-    for(iter = m_objects.begin(); iter != m_objects.end(); ++iter)
-    {
-        (*iter)->addToWorld(dynamicsWorld);
-    }
 }
+
 
 
 BulletRigidBody::BulletRigidBody()
@@ -157,10 +163,14 @@ BulletRigidBody::~BulletRigidBody()
     std::cerr << "BulletRigidBody dtor\n";
     teardown();
 }
+
 void BulletRigidBody::teardown()
 {
+    std::cerr << "Free fallRigidBody\n";
     delete fallRigidBody;
+    std::cerr << "Free fallMotionState\n";
     delete fallMotionState;
+    std::cerr << "Free fallShape\n";
     delete fallShape;
 }
 
@@ -222,7 +232,12 @@ public:
             // connected, otherwise modify_geometry dies
             return true;
         }
-        bool is_thing = dynamic_cast<DD::Image::SourceGeo*>(op) != 0;
+        bool is_thing = dynamic_cast<BulletRigidBodyNode*>(op) != 0;
+        std::cerr << "Accepting " << op->Class() << " as input " << input << "? ";
+        if(is_thing)
+            std::cerr << "yes\n";
+        else
+            std::cerr << "no\n";
         return is_thing;
     }
 
@@ -237,11 +252,7 @@ public:
         std::cerr << "BulletSolver ctor\n";
         bsolve = new Solveamajig();
 
-        std::cerr << "Making sphere thing\n";
-        testobj = new BulletRigidBody();
-
-        std::cerr << "Adding sphere to world\n";
-        bsolve->addObject(testobj);
+        testobj = NULL;
         frame = 0.0;
     }
 
@@ -260,11 +271,6 @@ public:
     const char * node_shape() const { return "[)"; }
 
     static const DD::Image::Op::Description description;
-
-    std::string testthingy()
-    {
-        return "Testing \\o/";
-    }
 };
 
 
@@ -286,29 +292,39 @@ void BulletSolver::_validate(bool for_real)
     // there must be a better way
 
     //frame = outputContext().frame();
+
+    BulletRigidBodyNode* rbdnode = dynamic_cast<BulletRigidBodyNode*>(input(0));
+    if(rbdnode == 0)
+    {
+        testobj = NULL;
+        error("Input 0 is not BulletRigidBodyNode, using dummy object\n");
+        return;
+    }
+    else
+    {
+        std::cerr << "Input is correct!\n";
+    }
+
+    std::cerr << "Getting object from input 1\n";
+    bsolve->clearObjects();
+    testobj = rbdnode->getobj();
+    bsolve->addObject(testobj);
+    std::cerr << "..got object from input\n";
 }
 
 void BulletSolver::modify_geometry(int obj, DD::Image::Scene& scene, DD::Image::GeometryList& geolist)
 {
     std::cerr << "BulletSolver::modify_geometry\n";
 
-    /*
-    BulletSolver* bw = dynamic_cast<BulletSolver*>(input(1));
-    if(bw != 0)
+    if(!testobj)
     {
-        std::cerr << "!\n";
-        std::cerr << bw->testthingy() << "\n";
-        std::cerr << "Yay\n";
+        std::cerr << "No testobj\n";
+        return;
     }
-    else
-    {
-        std::cerr << "Wrong input type on B\n";
-    }
-    */
 
     std::cerr << "Stepping sim to " << frame << "\n";
     bsolve->step(frame);
-    
+
     if(!testobj->getMove(geolist[obj].matrix))
     {
         error("Something broke, uhoh. No idea what.");
@@ -321,3 +337,68 @@ static DD::Image::Op* buildBulletSolver(Node* node)
     return new BulletSolver(node);
 }
 const DD::Image::Op::Description BulletSolver::description("BulletSolver", buildBulletSolver);
+
+
+
+
+BulletRigidBodyNode::BulletRigidBodyNode(Node* node) : ModifyGeo(node)
+{
+    std::cerr << "BulletRigidBodyNode ctor\n";
+
+    std::cerr << "Making sphere thing\n";
+    thisobj = new BulletRigidBody();
+
+    std::cerr << "Adding sphere to world\n";
+    //bsolve->addObject(testobj);
+}
+
+BulletRigidBodyNode::~BulletRigidBodyNode()
+{
+    std::cerr << "BulletRigidBodyNode dtor\n";
+    delete thisobj;
+}
+
+
+BulletRigidBody* BulletRigidBodyNode::getobj()
+{
+    return thisobj;
+}
+
+bool BulletRigidBodyNode::test_input(int input, DD::Image::Op* op) const
+{
+    if(strcmp(op->Class(), "NullGeo") == 0)
+    {
+        // Accept the NullGeo input, when no real node is
+        // connected, otherwise modify_geometry dies
+        return true;
+    }
+    bool is_thing = dynamic_cast<DD::Image::SourceGeo*>(op) != 0;
+    return is_thing;
+}
+
+void BulletRigidBodyNode::knobs(DD::Image::Knob_Callback f)
+{
+    DD::Image::ModifyGeo::knobs(f);
+}
+
+void BulletRigidBodyNode::_validate(bool for_real)
+{
+    std::cerr << "BulletRigidBodyNode::_validate\n";
+    ModifyGeo::_validate(for_real);
+}
+
+void BulletRigidBodyNode::get_geometry_hash()
+{
+    std::cerr << "BulletRigidBodyNode::get_geometry_hash\n";
+}
+
+void BulletRigidBodyNode::modify_geometry(int, DD::Image::Scene&, DD::Image::GeometryList&)
+{
+    std::cerr << "BulletRigidBodyNode::modify_geometry\n";
+}
+
+static DD::Image::Op* buildBulletRigidBodyNode(Node* node)
+{
+    return new BulletRigidBodyNode(node);
+}
+const DD::Image::Op::Description BulletRigidBodyNode::description("BulletRigidBodyNode", buildBulletRigidBodyNode);

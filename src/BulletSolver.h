@@ -30,6 +30,7 @@ public:
     void teardown();
 
     void addObject(BulletRigidBody* obj);
+    void clearObjects();
 
     void step(int frame);
     void resetsim();

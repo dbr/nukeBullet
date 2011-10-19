@@ -50,3 +50,6 @@ set_target_properties(BulletSolver
 # Once built, copy the library into install location (e.g "executable-prefix/lib/nuke/6.2")
 install(TARGETS BulletSolver
         DESTINATION ${CMAKE_INSTALL_EXEC_PREFIX}/lib/nuke${Nuke_DDImageVersion})
+
+install(FILES src/BulletRigidBodyNode.tcl
+        DESTINATION ${CMAKE_INSTALL_EXEC_PREFIX}/lib/nuke${Nuke_DDImageVersion})
